@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Laboratório VPN</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: painel de laboratório — controles no topo, topologia larga, terminal + observadores lado a lado, pacotes embaixo */
+:root {
+  --bg: #eef1f5; --surface: #ffffff; --ink: #17202b; --muted: #5a6677; --line: #d3dae4;
+  --orig: #0d7f74; --orig-soft: #d9f0ed;
+  --enc: #b8600d; --enc-soft: #fbe9d6;
+  --bad: #c03535; --bad-soft: #f8dfdf;
+  --term-bg: #18202b; --term-ink: #dfe6ee; --term-muted: #8c9aab; --term-prompt: #f0a04b;
+  --z-casa: #e2ecfb; --z-casa-ink: #2c5ca8;
+  --z-net: #eceef2; --z-net-ink: #4f5b6b;
+  --z-emp: #ebe4f8; --z-emp-ink: #6541ad;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0e131a; --surface: #161d27; --ink: #e3e8ef; --muted: #93a0b1; --line: #2a3442;
+  --orig: #3cc3b2; --orig-soft: #12302e; --enc: #f0a04b; --enc-soft: #3a2914;
+  --bad: #ef6e6e; --bad-soft: #3b1b1d;
+  --term-bg: #0a0e13; --term-ink: #dfe6ee; --term-muted: #7f8c9c; --term-prompt: #f0a04b;
+  --z-casa: #15223a; --z-casa-ink: #8fb4f2; --z-net: #1b222d; --z-net-ink: #a3afbf; --z-emp: #221a36; --z-emp-ink: #bba3f0;
+  color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0e131a; --surface: #161d27; --ink: #e3e8ef; --muted: #93a0b1; --line: #2a3442;
+  --orig: #3cc3b2; --orig-soft: #12302e; --enc: #f0a04b; --enc-soft: #3a2914;
+  --bad: #ef6e6e; --bad-soft: #3b1b1d;
+  --term-bg: #0a0e13; --term-ink: #dfe6ee; --term-muted: #7f8c9c; --term-prompt: #f0a04b;
+  --z-casa: #15223a; --z-casa-ink: #8fb4f2; --z-net: #1b222d; --z-net-ink: #a3afbf; --z-emp: #221a36; --z-emp-ink: #bba3f0;
+  color-scheme: dark }
+
+* { box-sizing: border-box }
+[hidden] { display: none !important }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 15px; line-height: 1.5 }
+.wrap { max-width: 1120px; margin: 0 auto; padding-block: 28px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 20px }
+header h1 { margin: 0; font-size: 1.75rem; letter-spacing: -0.01em; text-wrap: balance }
+header p { margin: 4px 0 0; color: var(--muted); max-width: 70ch }
+.eyebrow { font-family: var(--mono); font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted) }
+
+.controls { display: flex; flex-wrap: wrap; gap: 16px 28px; align-items: flex-end }
+.group { display: grid; gap: 6px }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--surface) }
+.seg button, .acts button { font: inherit; font-size: 0.9rem; cursor: pointer; color: var(--ink); background: transparent; border: 0; padding: 8px 14px }
+.seg button + button { border-left: 1px solid var(--line) }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); font-weight: 600 }
+.acts { display: flex; flex-wrap: wrap; gap: 8px }
+.acts button { border: 1px solid var(--line); border-radius: 8px; background: var(--surface) }
+.acts button[aria-pressed="true"] { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); font-weight: 600 }
+button:focus-visible { outline: 2px solid var(--enc); outline-offset: 2px }
+.acts code { font-family: var(--mono); font-size: 0.8rem; color: var(--muted) }
+
+.steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px }
+@media (max-width: 760px) { .steps { grid-template-columns: repeat(2, minmax(0, 1fr)) } }
+.steps button { font: inherit; color: var(--ink); text-align: left; cursor: pointer; display: flex; gap: 10px; align-items: flex-start;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; min-width: 0 }
+.steps .n { flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-family: var(--mono); font-weight: 600; font-size: 0.85rem; border: 1px solid var(--line); color: var(--muted) }
+.steps .t { display: grid; min-width: 0 }
+.steps b { font-weight: 600; font-size: 0.92rem }
+.steps small { color: var(--muted); font-size: 0.76rem; font-family: var(--mono) }
+.steps button.done .n { border-color: var(--orig); color: var(--orig) }
+.steps button[aria-current="step"] { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink) }
+.steps button[aria-current="step"] .n { background: var(--ink); border-color: var(--ink); color: var(--surface) }
+
+.caption { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; display: grid; gap: 6px }
+.caption h2 { margin: 0; font-size: 1.3rem; text-wrap: balance }
+.caption p { margin: 0; max-width: 78ch }
+.caption .look { color: var(--muted); font-size: 0.92rem }
+.caption .look b { color: var(--ink); font-weight: 600 }
+.cap-foot { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: center; margin-top: 8px }
+.cap-foot .nav { display: flex; gap: 8px; margin-left: auto }
+.cap-foot .nav button { font: inherit; font-size: 0.9rem; cursor: pointer; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 14px }
+.cap-foot .nav button:disabled { opacity: .4; cursor: default }
+#next { background: var(--ink); color: var(--surface); border-color: var(--ink) }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; min-width: 0 }
+.card h2 { margin: 0 0 10px; font-size: 0.95rem; font-weight: 600 }
+
+.topo { overflow-x: auto }
+.topo svg { display: block; width: 100%; min-width: 640px; height: auto }
+.topo text { font-family: var(--mono); fill: var(--ink) }
+.topo .lbl { font-size: 13px; font-weight: 600; font-family: var(--sans) }
+.topo .ip { font-size: 11px; fill: var(--muted) }
+.topo .z-casa { fill: var(--z-casa); stroke: var(--z-casa-ink); stroke-opacity: .45 }
+.topo .z-net  { fill: var(--z-net);  stroke: var(--z-net-ink);  stroke-opacity: .45; stroke-dasharray: 5 4 }
+.topo .z-emp  { fill: var(--z-emp);  stroke: var(--z-emp-ink);  stroke-opacity: .45 }
+.topo .zt { font-family: var(--sans); font-size: 13px; font-weight: 700; letter-spacing: .08em }
+.topo .zt-casa { fill: var(--z-casa-ink) } .topo .zt-net { fill: var(--z-net-ink) } .topo .zt-emp { fill: var(--z-emp-ink) }
+.topo .zs { font-size: 10.5px; fill: var(--muted) }
+.topo .tlbl { font-size: 11px; fill: var(--enc); font-weight: 600 }
+.topo .fail { font-size: 11px; fill: var(--bad); font-weight: 600 }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 0.82rem; color: var(--muted); margin-top: 8px }
+.legend span::before { content: ""; display: inline-block; width: 22px; height: 4px; border-radius: 2px; vertical-align: middle; margin-right: 6px; background: var(--c) }
+.legend .tun::before { height: 10px; background: var(--enc-soft); border: 1px dashed var(--enc) }
+
+.cols { display: grid; grid-template-columns: 1.1fr 1fr; gap: 20px }
+@media (max-width: 820px) { .cols { grid-template-columns: 1fr } }
+
+.term { background: var(--term-bg); color: var(--term-ink); border-radius: 8px; padding: 14px; font-family: var(--mono); font-size: 0.8rem; line-height: 1.55; overflow-x: auto; white-space: pre; margin: 0 }
+.term .p { color: var(--term-prompt) }
+.term .c { color: var(--term-muted) }
+.term .hl { background: rgba(240,160,75,.22); border-radius: 3px }
+.term .err { color: #ff8f8f }
+
+.obs { display: grid; gap: 12px }
+.ob { display: grid; gap: 4px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line) }
+.ob .who { font-size: 0.78rem; font-family: var(--mono); color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase }
+.ob .what { font-family: var(--mono); font-size: 0.85rem; overflow-wrap: anywhere }
+.ob .note { font-size: 0.88rem; color: var(--muted) }
+.ob.enc { border-color: var(--enc); background: var(--enc-soft) }
+.ob.orig { border-color: var(--orig); background: var(--orig-soft) }
+.ob.bad { border-color: var(--bad); background: var(--bad-soft) }
+.secret { color: var(--bad); font-weight: 600 }
+
+.pkts { display: grid; grid-template-columns: 1fr 1fr; gap: 20px }
+@media (max-width: 820px) { .pkts { grid-template-columns: 1fr } }
+.pkt { display: flex; flex-wrap: wrap; gap: 4px; align-items: stretch; font-family: var(--mono); font-size: 0.76rem }
+.h { padding: 6px 8px; border-radius: 5px; border: 1px solid; display: grid; gap: 1px }
+.h b { font-size: 0.68rem; letter-spacing: 0.06em; font-weight: 600; opacity: .8 }
+.h.o { border-color: var(--orig); background: var(--orig-soft) }
+.h.e { border-color: var(--enc); background: var(--enc-soft) }
+.box { flex: 1 1 260px; border: 1px dashed var(--enc); border-radius: 6px; padding: 6px; display: grid; gap: 4px;
+  background: repeating-linear-gradient(135deg, var(--enc-soft) 0 6px, transparent 6px 12px) }
+.box .cap { font-size: 0.7rem; color: var(--enc); font-weight: 600 }
+.box .pkt { opacity: .55; filter: blur(.4px) }
+.none { color: var(--muted); font-size: 0.9rem }
+.pk-title { font-size: 0.85rem; color: var(--muted); margin: 0 0 8px }
+
+details { font-size: 0.9rem; color: var(--muted) }
+details summary { cursor: pointer; color: var(--ink); font-weight: 500 }
+details ul { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 4px; max-width: 80ch }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Redes de Computadores · VPN com WireGuard</div>
+    <h1>Laboratório VPN</h1>
+    <p>Um funcionário em casa precisa acessar o servidor interno da empresa. Cada passo mostra o equivalente no terminal, o caminho do pacote e o que cada ponto da rede observa.</p>
+  </header>
+
+  <nav class="steps" aria-label="Passos da demonstração">
+    <button id="st-0" data-step="0"><span class="n">1</span><span class="t"><b>Sem VPN</b><small>curl 10.10.0.20</small></span></button>
+    <button id="st-1" data-step="1"><span class="n">2</span><span class="t"><b>Ligando a VPN</b><small>vpn.sh split</small></span></button>
+    <button id="st-2" data-step="2"><span class="n">3</span><span class="t"><b>O que cada ponto vê</b><small>tcpdump</small></span></button>
+    <button id="st-3" data-step="3"><span class="n">4</span><span class="t"><b>Split x full tunnel</b><small>vpn.sh full</small></span></button>
+  </nav>
+
+  <section class="caption" aria-live="polite">
+    <div class="eyebrow" id="capMod"></div>
+    <h2 id="capTitle"></h2>
+    <p id="capText"></p>
+    <p class="look" id="capLook"></p>
+    <div class="cap-foot">
+      <div class="seg" id="sub" role="group" aria-label="Tipo de túnel">
+        <button id="sub-split" data-sub="split">Split tunnel</button>
+        <button id="sub-full" data-sub="full">Full tunnel</button>
+      </div>
+      <div class="nav">
+        <button id="prev">← Anterior</button>
+        <button id="next">Próximo →</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="card topo" aria-label="Topologia">
+    <svg id="svg" viewBox="0 0 920 270" role="img" aria-label="Topologia: funcionário, roteador do provedor, gateway VPN, servidor interno e site público">
+      <defs>
+        <pattern id="hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+          <rect width="8" height="8" fill="var(--enc-soft)"/><line x1="0" y1="0" x2="0" y2="8" stroke="var(--enc)" stroke-opacity=".25" stroke-width="3"/>
+        </pattern>
+      </defs>
+      <!-- zonas -->
+      <rect class="z-casa" x="8" y="8" width="168" height="254" rx="12"/>
+      <text class="zt zt-casa" x="22" y="32">FUNCIONÁRIO</text>
+      <text class="zs" x="22" y="48">rede doméstica</text>
+      <rect class="z-net" x="188" y="8" width="388" height="254" rx="12"/>
+      <text class="zt zt-net" x="202" y="32">INTERNET</text>
+      <text class="zs" x="202" y="48">endereços públicos · provedores</text>
+      <rect class="z-emp" x="588" y="8" width="324" height="254" rx="12"/>
+      <text class="zt zt-emp" x="602" y="32">EMPRESA</text>
+      <text class="zs" x="602" y="48">rede privada 10.10.0.0/24</text>
+      <!-- links físicos -->
+      <g stroke="var(--line)" stroke-width="3" fill="none">
+        <line x1="82" y1="100" x2="300" y2="100"/>
+        <line x1="300" y1="100" x2="675" y2="100"/>
+        <line x1="675" y1="100" x2="850" y2="100"/>
+        <line x1="420" y1="100" x2="420" y2="210"/>
+      </g>
+      <!-- túnel -->
+      <rect id="tunnel" x="82" y="86" width="593" height="28" rx="14" fill="url(#hatch)" stroke="var(--enc)" stroke-dasharray="6 4" opacity="0"/>
+      <text id="tunnelLbl" class="tlbl" x="330" y="78" opacity="0">túnel WireGuard · UDP 51820</text>
+      <!-- caminho e pacote -->
+      <g id="path"></g>
+      <g id="fail"></g>
+      <circle id="dot" r="8" cx="-20" cy="-20" stroke="var(--surface)" stroke-width="2"/>
+      <!-- nós -->
+      <g id="nodes"></g>
+    </svg>
+    <div class="legend">
+      <span style="--c: var(--orig)">pacote original</span>
+      <span style="--c: var(--enc)">pacote encapsulado e cifrado</span>
+      <span class="tun">túnel ativo</span>
+      <span style="--c: var(--z-casa-ink)">funcionário</span>
+      <span style="--c: var(--z-net-ink)">Internet</span>
+      <span style="--c: var(--z-emp-ink)">empresa</span>
+    </div>
+  </section>
+
+  <div class="cols">
+    <section class="card">
+      <h2>Equivalente no terminal</h2>
+      <pre class="term" id="term"></pre>
+    </section>
+    <section class="card">
+      <h2>O que cada ponto vê</h2>
+      <div class="obs" id="obs"></div>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2>O pacote em cada trecho</h2>
+    <div class="pkts">
+      <div><p class="pk-title">Entre a casa e a empresa (provedor, Internet)</p><div id="pk1"></div></div>
+      <div><p class="pk-title">Depois do gateway-vpn</p><div id="pk2"></div></div>
+    </div>
+  </section>
+
+  <details>
+    <summary>O que esta simulação mostra e o que ela não prova</summary>
+    <ul>
+      <li>Mostra que as rotas decidem o que entra no túnel: em split só 10.10.0.0/24, em full tudo (via 0.0.0.0/1 e 128.0.0.0/1), exceto o próprio pacote externo para 198.51.100.2.</li>
+      <li>Mostra que o provedor vê só as extremidades do túnel, a porta UDP, o tamanho e o horário dos pacotes.</li>
+      <li>Mostra que a proteção termina no gateway: depois dele o pacote original segue sem a cifra da VPN. Por isso o HTTPS continua necessário.</li>
+      <li>Mostra que o IP público visto por um site só muda em full tunnel, porque o gateway faz NAT.</li>
+      <li>Não mede desempenho. O MTU do wg0 é 1420 contra 1500 da interface física, por causa do cabeçalho extra, mas latência e vazão dependem do caminho real.</li>
+      <li>Não prova anonimato nem proteção contra golpes, malware ou roubo de credenciais. O operador da VPN vê o tráfego que sai do túnel.</li>
+    </ul>
+  </details>
+</div>
+
+<script>
+(() => {
+  const N = {
+    F: { x: 82,  y: 100, name: "funcionario", ip: ["203.0.113.10", "wg0 10.8.0.2"] },
+    R: { x: 300, y: 100, name: "roteador (provedor)", ip: ["203.0.113.254", "198.51.100.254"] },
+    J: { x: 420, y: 100 },
+    G: { x: 675, y: 100, name: "gateway-vpn", ip: ["198.51.100.2 (pública)", "10.10.0.1 (interna)", "wg0 10.8.0.1"] },
+    S: { x: 850, y: 100, name: "servidor-interno", ip: ["10.10.0.20"] },
+    W: { x: 420, y: 210, name: "site-publico", ip: ["198.51.100.100"] },
+  };
+  const ROUTES = {
+    off: ["default via 203.0.113.254 dev eth0",
+          "203.0.113.0/24 dev eth0 proto kernel scope link src 203.0.113.10"],
+    split: ["default via 203.0.113.254 dev eth0",
+            "10.8.0.0/24 dev wg0 proto kernel scope link src 10.8.0.2",
+            "10.10.0.0/24 dev wg0 scope link",
+            "203.0.113.0/24 dev eth0 proto kernel scope link src 203.0.113.10"],
+    full: ["0.0.0.0/1 dev wg0 scope link",
+           "default via 203.0.113.254 dev eth0",
+           "10.8.0.0/24 dev wg0 proto kernel scope link src 10.8.0.2",
+           "128.0.0.0/1 dev wg0 scope link",
+           "198.51.100.2 via 203.0.113.254 dev eth0",
+           "203.0.113.0/24 dev eth0 proto kernel scope link src 203.0.113.10"],
+  };
+  // rota que o kernel escolhe para cada destino
+  const MATCH = {
+    off:   { "10.10.0.20": 0, "198.51.100.100": 0 },
+    split: { "10.10.0.20": 2, "198.51.100.100": 0 },
+    full:  { "10.10.0.20": 0, "198.51.100.100": 3 },
+  };
+  const ROUTE_GET = (mode, dst) => {
+    const tun = mode === "full" || (mode === "split" && dst === "10.10.0.20");
+    return tun ? `${dst} dev wg0 src 10.8.0.2` : `${dst} via 203.0.113.254 dev eth0 src 203.0.113.10`;
+  };
+
+  const STEPS = [
+    { mod: "Passo 1 de 4", title: "Sem VPN, o servidor interno é inalcançável",
+      text: "O notebook tem uma única rota: tudo vai para o provedor. O servidor usa um endereço privado, 10.10.0.20, e a Internet não tem rota para ele. O pacote é descartado no provedor.",
+      look: "<b>Resultado:</b> só a rota padrão na tabela, e o curl termina em timeout.",
+      sc: () => ({ mode: "off", act: "intra" }) },
+    { mod: "Passo 2 de 4", title: "Ligando a VPN: uma interface e uma rota novas",
+      text: "A VPN cria a interface wg0 e a rota 10.10.0.0/24 dev wg0. O que vai para a rede da empresa entra no túnel: o WireGuard coloca o pacote dentro de outro (UDP 51820) e o entrega ao gateway da empresa.",
+      look: "<b>Resultado:</b> o servidor responde e vê a origem 10.8.0.2, o endereço do notebook dentro do túnel.",
+      sc: () => ({ mode: "split", act: "intra" }) },
+    { mod: "Passo 3 de 4", title: "O que cada ponto vê durante um login",
+      text: "Um login por HTTP, capturado com tcpdump em dois pontos. No provedor passa só o pacote externo: IP de casa para IP do gateway, UDP, conteúdo cifrado. Depois do gateway, o pacote original segue aberto.",
+      look: "<b>Resultado:</b> a senha aparece só dentro da empresa. A proteção da VPN termina no gateway; o HTTPS protege a conversa até o servidor.",
+      sc: () => ({ mode: "split", act: "loginI" }) },
+    { mod: "Passo 4 de 4", title: "Split x full tunnel: quem o site enxerga",
+      text: null, look: null,
+      sc: sub => ({ mode: sub, act: "site" }) },
+  ];
+  const SUB_TEXT = {
+    split: ["Em split tunnel só a rede da empresa usa o túnel. O acesso ao site sai direto pelo provedor.",
+            "<b>Resultado:</b> o site vê o IP de casa, 203.0.113.10."],
+    full:  ["Em full tunnel as rotas 0.0.0.0/1 e 128.0.0.0/1 mandam tudo para o túnel. O pacote sai na empresa, e o gateway troca a origem pelo IP público dele (NAT). A rota 198.51.100.2 via eth0 impede o túnel de entrar em si mesmo.",
+            "<b>Resultado:</b> o site vê 198.51.100.2, o IP da empresa. O IP público mudou só por causa das rotas."],
+  };
+  const state = { step: 0, sub: "split", mode: "off", act: "intra" };
+  const esc = s => s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+  const SECRET = "usuario=ana&senha=1234";
+  const showSecret = s => esc(s).replace(esc(SECRET), `<span class="secret">${esc(SECRET)}</span>`);
+
+  function scenario(mode, act) {
+    const toIntra = act === "intra" || act === "loginI";
+    const login = act.startsWith("login");
+    const dst = toIntra ? "10.10.0.20" : "198.51.100.100";
+    const vpn = mode !== "off";
+    const tunnel = vpn && (toIntra || mode === "full");
+    const http = login ? `POST /login  ${SECRET}` : "GET /";
+    const curl = login ? `curl -d '${SECRET}' http://${dst}/login` : `curl http://${dst}/`;
+    const s = { dst, curl, tunnel, segs: [], fail: null, out: [], obs: [], pk1: null, pk2: null };
+    const appTitle = toIntra ? "Intranet da empresa (servidor interno 10.10.0.20)" : "Site publico na Internet (198.51.100.100)";
+
+    if (!vpn && toIntra) {
+      s.segs = [["F", "R", "o"]]; s.fail = "R";
+      s.out = [{ err: "curl: (28) Connection timed out after 3001 milliseconds" }];
+      s.obs = [
+        { cls: "bad", who: "Provedor (roteador)", what: `203.0.113.10 → 10.10.0.20  TCP 80`, note: "Descarta o pacote: 10.10.0.20 é um endereço privado e não existe rota para ele na Internet." },
+        { cls: "", who: "Rede da empresa", what: "—", note: "Nada chega à empresa." },
+        { cls: "", who: "Servidor interno", what: "—", note: "Não recebe nenhuma requisição." },
+      ];
+      s.pk1 = orig("203.0.113.10", dst, http);
+      return s;
+    }
+    if (!tunnel) {
+      s.segs = [["F", "R", "o"], ["R", "J", "o"], ["J", "W", "o"]];
+      s.out = [{ t: appTitle }, { t: login ? `Login recebido de 203.0.113.10: ${SECRET}` : "IP de origem visto pelo servidor: 203.0.113.10" }];
+      s.obs = [
+        { cls: "bad", who: "Provedor (roteador)", what: `203.0.113.10 → 198.51.100.100  TCP 80`, note: `Conteúdo legível: ${http}` },
+        { cls: "", who: "Gateway / rede da empresa", what: "—", note: mode === "split" ? "Split tunnel: só 10.10.0.0/24 entra no túnel. O acesso ao site vai direto pela Internet." : "Sem VPN o tráfego não passa pela empresa." },
+        { cls: "orig", who: "Site público", what: "origem: 203.0.113.10", note: "O site vê o IP público da casa." },
+      ];
+      s.pk1 = orig("203.0.113.10", dst, http);
+      return s;
+    }
+    // pelo túnel
+    s.segs = [["F", "R", "e"], ["R", "J", "e"], ["J", "G", "e"]];
+    const innerSrc = "10.8.0.2";
+    if (toIntra) {
+      s.segs.push(["G", "S", "o"]);
+      s.out = [{ t: appTitle }, { t: login ? `Login recebido de 10.8.0.2: ${SECRET}` : "IP de origem visto pelo servidor: 10.8.0.2" }];
+      s.obs = [
+        { cls: "enc", who: "Provedor (roteador)", what: "203.0.113.10:udp → 198.51.100.2:51820  UDP", note: "Conteúdo cifrado. Vê só as extremidades do túnel, a porta, o tamanho e o horário." },
+        { cls: "bad", who: "Rede interna da empresa (depois do gateway)", what: `10.8.0.2 → 10.10.0.20  TCP 80`, note: `Pacote original em texto claro: ${http}. A proteção do túnel termina no gateway.` },
+        { cls: "orig", who: "Servidor interno", what: "origem: 10.8.0.2", note: "O servidor vê o endereço interno do túnel." },
+      ];
+      s.pk2 = orig(innerSrc, dst, http);
+    } else {
+      s.segs.push(["G", "J", "o"], ["J", "W", "o"]);
+      s.out = [{ t: appTitle }, { t: login ? `Login recebido de 198.51.100.2: ${SECRET}` : "IP de origem visto pelo servidor: 198.51.100.2" }];
+      s.obs = [
+        { cls: "enc", who: "Provedor de casa (roteador)", what: "203.0.113.10:udp → 198.51.100.2:51820  UDP", note: "Conteúdo cifrado. O provedor de casa não sabe que o destino final é o site." },
+        { cls: "bad", who: "Internet entre gateway e site", what: `198.51.100.2 → 198.51.100.100  TCP 80`, note: `Saiu do túnel com NAT e segue sem a cifra da VPN: ${http}. Só o HTTPS protegeria este trecho.` },
+        { cls: "orig", who: "Site público", what: "origem: 198.51.100.2", note: "O site vê o IP público da empresa, não o de casa." },
+      ];
+      s.pk2 = orig("198.51.100.2", dst, http, "depois do NAT");
+    }
+    s.pk1 = enc(orig(innerSrc, dst, http));
+    return s;
+  }
+
+  function orig(src, dst, http, extra) {
+    return `<div class="pkt"><span class="h o"><b>IP${extra ? " · " + extra : ""}</b>${src} → ${dst}</span><span class="h o"><b>TCP</b>porta 80</span><span class="h o"><b>HTTP</b>${showSecret(http)}</span></div>`;
+  }
+  function enc(inner) {
+    return `<div class="pkt"><span class="h e"><b>IP EXTERNO</b>203.0.113.10 → 198.51.100.2</span><span class="h e"><b>UDP</b>porta 51820</span><span class="h e"><b>WIREGUARD</b>cabeçalho</span>
+      <div class="box"><span class="cap">conteúdo cifrado · só as extremidades do túnel leem</span>${inner}</div></div>`;
+  }
+
+  // ---------- desenho ----------
+  const svg = document.getElementById("svg");
+  const NS = "http://www.w3.org/2000/svg";
+  const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); parent && parent.appendChild(e); return e; };
+
+  const nodes = document.getElementById("nodes");
+  for (const k of ["F", "R", "G", "S", "W"]) {
+    const n = N[k], g = el("g", {}, nodes);
+    el("rect", { x: n.x - 18, y: n.y - 16, width: 36, height: 32, rx: 6, fill: "var(--surface)", stroke: "var(--ink)", "stroke-width": 1.5 }, g);
+    el("text", { x: n.x, y: n.y + 5, "text-anchor": "middle", "font-size": 13, "font-weight": 600 }, g).textContent = { F: "PC", R: "R", G: "VPN", S: "SRV", W: "WEB" }[k];
+    const ly = k === "W" ? n.y + 5 : n.y + 36;
+    const lx = k === "W" ? n.x + 28 : n.x;
+    const anchor = k === "W" ? "start" : "middle";
+    el("text", { x: lx, y: ly, "text-anchor": anchor, class: "lbl" }, g).textContent = n.name;
+    n.ip.forEach((ip, i) => el("text", { x: lx, y: ly + 15 + i * 14, "text-anchor": anchor, class: "ip" }, g).textContent = ip);
+  }
+
+  const pathG = document.getElementById("path"), failG = document.getElementById("fail"), dot = document.getElementById("dot");
+  const color = k => k === "e" ? "var(--enc)" : "var(--orig)";
+  let raf = 0;
+
+  function draw(s) {
+    pathG.innerHTML = ""; failG.innerHTML = "";
+    const on = state.mode !== "off";
+    document.getElementById("tunnel").setAttribute("opacity", on ? 1 : 0);
+    document.getElementById("tunnelLbl").setAttribute("opacity", on ? 1 : 0);
+    const segs = s.segs.map(([a, b, k]) => ({ a: N[a], b: N[b], k, len: Math.hypot(N[b].x - N[a].x, N[b].y - N[a].y) }));
+    segs.forEach(sg => el("line", { x1: sg.a.x, y1: sg.a.y, x2: sg.b.x, y2: sg.b.y, stroke: color(sg.k), "stroke-width": 5, "stroke-linecap": "round", opacity: .85 }, pathG));
+    if (s.fail) {
+      const n = N[s.fail];
+      el("path", { d: `M${n.x + 26} ${n.y - 34} l16 16 m0 -16 l-16 16`, stroke: "var(--bad)", "stroke-width": 4, "stroke-linecap": "round" }, failG);
+      el("text", { x: n.x + 48, y: n.y - 21, class: "fail" }, failG).textContent = "sem rota para 10.10.0.20";
+    }
+    cancelAnimationFrame(raf);
+    const total = segs.reduce((t, sg) => t + sg.len, 0);
+    const place = d => {
+      for (const sg of segs) { if (d <= sg.len) { const t = d / sg.len; dot.setAttribute("cx", sg.a.x + (sg.b.x - sg.a.x) * t); dot.setAttribute("cy", sg.a.y + (sg.b.y - sg.a.y) * t); dot.setAttribute("fill", color(sg.k)); return; } d -= sg.len; }
+    };
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) { place(total); return; }
+    const dur = 600 + total * 3.2, t0 = performance.now();
+    const step = now => { const p = Math.min(1, (now - t0) / dur); place(total * (1 - Math.pow(1 - p, 2))); if (p < 1) raf = requestAnimationFrame(step); };
+    raf = requestAnimationFrame(step);
+  }
+
+  function render() {
+    const st = STEPS[state.step];
+    Object.assign(state, st.sc(state.sub));
+    const s = scenario(state.mode, state.act);
+    document.querySelectorAll("[data-step]").forEach(b => {
+      const i = +b.dataset.step;
+      if (i === state.step) b.setAttribute("aria-current", "step"); else b.removeAttribute("aria-current");
+      b.classList.toggle("done", i < state.step);
+    });
+    const last = state.step === 3;
+    document.getElementById("capMod").textContent = st.mod;
+    document.getElementById("capTitle").textContent = st.title;
+    document.getElementById("capText").textContent = last ? SUB_TEXT[state.sub][0] : st.text;
+    document.getElementById("capLook").innerHTML = last ? SUB_TEXT[state.sub][1] : st.look;
+    document.getElementById("sub").hidden = !last;
+    document.querySelectorAll("[data-sub]").forEach(b => b.setAttribute("aria-pressed", b.dataset.sub === state.sub));
+    document.getElementById("prev").disabled = state.step === 0;
+    document.getElementById("next").disabled = last && state.sub === "full";
+    document.getElementById("next").textContent = last ? "Full tunnel →" : "Próximo →";
+    document.getElementById("next").hidden = last && state.sub === "full";
+
+    const hlIdx = MATCH[state.mode][s.dst];
+    const lines = [];
+    const vpnCmd = { off: "vpn.sh off", split: "vpn.sh split", full: "vpn.sh full" }[state.mode];
+    lines.push(`<span class="p">$</span> ${vpnCmd}`, `<span class="c">${state.mode === "off" ? "VPN desligada" : `VPN ligada (${state.mode} tunnel)`}</span>`, "");
+    lines.push(`<span class="p">$</span> ip route`);
+    ROUTES[state.mode].forEach((r, i) => lines.push(i === hlIdx ? `<span class="hl">${r}</span>` : r));
+    lines.push("", `<span class="p">$</span> ip route get ${s.dst}`, `<span class="hl">${ROUTE_GET(state.mode, s.dst)}</span>`);
+    lines.push("", `<span class="p">$</span> ${esc(s.curl)}`);
+    s.out.forEach(o => lines.push(o.err ? `<span class="err">${esc(o.err)}</span>` : showSecret(o.t)));
+    if (state.step === 2) {
+      lines.push("", `<span class="c"># no roteador do provedor</span>`,
+        `<span class="p">$</span> tcpdump -nn -i eth0 host 203.0.113.10`,
+        "IP 203.0.113.10.37076 > 198.51.100.2.51820: UDP, length 96",
+        "IP 198.51.100.2.51820 > 203.0.113.10.37076: UDP, length 96",
+        "IP 203.0.113.10.37076 > 198.51.100.2.51820: UDP, length 256",
+        "", `<span class="c"># no gateway-vpn, interface da rede interna</span>`,
+        `<span class="p">$</span> tcpdump -nn -A -i eth1 tcp port 80`,
+        "IP 10.8.0.2.45888 > 10.10.0.20.80: tcp 171",
+        "POST /login HTTP/1.1",
+        showSecret(SECRET));
+    }
+    document.getElementById("term").innerHTML = lines.join("\n");
+
+    document.getElementById("obs").innerHTML = s.obs.map(o =>
+      `<div class="ob ${o.cls}"><span class="who">${o.who}</span><span class="what">${esc(o.what)}</span><span class="note">${showSecret(o.note)}</span></div>`).join("");
+    document.getElementById("pk1").innerHTML = s.pk1;
+    document.getElementById("pk2").innerHTML = s.pk2 || `<p class="none">${s.fail ? "O pacote não chega até a empresa." : "O pacote não passa pelo gateway-vpn."}</p>`;
+    draw(s);
+  }
+
+  const go = i => { state.step = Math.max(0, Math.min(3, i)); if (state.step < 3) state.sub = "split"; render(); };
+  const next = () => { if (state.step === 3) { if (state.sub === "split") { state.sub = "full"; render(); } } else go(state.step + 1); };
+  const prev = () => { if (state.step === 3 && state.sub === "full") { state.sub = "split"; render(); } else go(state.step - 1); };
+  document.querySelectorAll("[data-step]").forEach(b => b.addEventListener("click", () => go(+b.dataset.step)));
+  document.querySelectorAll("[data-sub]").forEach(b => b.addEventListener("click", () => { state.sub = b.dataset.sub; render(); }));
+  document.getElementById("next").addEventListener("click", next);
+  document.getElementById("prev").addEventListener("click", prev);
+  document.addEventListener("keydown", e => {
+    if (e.target.closest && e.target.closest("input, textarea")) return;
+    if (e.key === "ArrowRight" || e.key === "PageDown") { e.preventDefault(); next(); }
+    if (e.key === "ArrowLeft" || e.key === "PageUp") { e.preventDefault(); prev(); }
+  });
+  render();
+})();
+</script>
+</body>
+</html>
